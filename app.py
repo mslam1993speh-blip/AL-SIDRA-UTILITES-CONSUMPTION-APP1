@@ -10,7 +10,7 @@ st.markdown("""
     <style>
     .stMetric { background-color: #ffffff; border: 1px solid #e0e0e0; padding: 15px; border-radius: 10px; box-shadow: 2px 2px 5px rgba(0,0,0,0.05); }
     .anomaly-card { background-color: #fff3f3; border-left: 5px solid #ff4b4b; padding: 10px; border-radius: 5px; margin-bottom: 10px; }
-    .forecast-box { background-color: #e8f5e9; border: 1px dashed #2e7d32; padding: 15px; border-radius: 10px; text-align: center; font-weight: bold; }
+    .forecast-box { background-color: #e8f5e9; border: 1px dashed #2e7d32; padding: 15px; border-radius: 10px; text-align: center; font-weight: bold; margin-bottom: 20px; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -24,7 +24,7 @@ translations = {
         'all_period': "السنة كاملة",
         'summary': "📋 مؤشرات الأداء والإنتاج (KPIs)",
         'baselines': "📉 خطوط الأساس (Baselines)",
-        'forecast': "🔮 التنبؤ بنهاية الشهر",
+        'forecast': "🔮 التنبؤ بالاستهلاك المتوقع بنهاية الشهر",
         'anom': "🚨 كشف الشذوذ والتنبيهات",
         'footer': "Done by Maintenance Department (Utilities)"
     },
@@ -51,6 +51,7 @@ with st.sidebar:
     st.button(l['lang_btn'], on_click=toggle_lang)
     st.markdown("---")
     uploaded_file = st.file_uploader("Upload DAILY REPORT 2025", type=['xlsx'])
+    # القيمة الافتراضية للإنتاج تم تعديلها لتناسب المصانع الكبيرة
     prod_qty = st.number_input("Chicken Production (KG)", min_value=1.0, value=150000.0)
     st.markdown("---")
     st.markdown(f"<div style='text-align:center; color:grey; font-size:12px;'>{l['footer']}</div>", unsafe_allow_html=True)
@@ -74,7 +75,6 @@ if uploaded_file:
         selected_period = st.selectbox("Select Period", month_list)
         df = full_df if selected_period == l['all_period'] else full_df[full_df['MONTH'] == selected_period]
 
-        # دالة جلب الأعمدة بمرونة
         def get_col(keys):
             for col in df.columns:
                 if any(k in col for k in keys): return pd.to_numeric(df[col], errors='coerce').fillna(0)
@@ -85,17 +85,38 @@ if uploaded_file:
         df['W_IN'] = get_col(['WATER REC', 'وارد'])
         df['W_OUT'] = get_col(['SANIT', 'صرف', 'نضح'])
 
-        # --- 3. قسم KPIs (بما في ذلك الدجاج) ---
+        # --- 3. التنبؤ بنهاية الشهر (Forecast) ---
+        # يظهر التنبؤ عند اختيار شهر محدد أو حتى السنة كاملة بناءً على المتوسط اليومي
+        st.subheader(l['forecast'])
+        days_in_data = len(df)
+        if days_in_data > 0:
+            # حساب التوقعات بناءً على متوسط الاستهلاك اليومي مضروباً في 30 يوماً
+            p_elec = (df['ELEC'].sum() / days_in_data) * 30
+            p_lpg = (df['LPG'].sum() / days_in_data) * 30
+            p_water = (df['W_IN'].sum() / days_passed) * 30 if 'days_passed' in locals() else (df['W_IN'].sum() / days_in_data) * 30
+            
+            f1, f2, f3 = st.columns(3)
+            f1.markdown(f"<div class='forecast-box'>⚡ {l['forecast']} (Elec):<br>{p_elec:,.0f} kWh</div>", unsafe_allow_html=True)
+            f2.markdown(f"<div class='forecast-box'>🔥 {l['forecast']} (LPG):<br>{p_lpg:,.0f} kg</div>", unsafe_allow_html=True)
+            f3.markdown(f"<div class='forecast-box'>💧 {l['forecast']} (Water):<br>{p_water:,.0f} m³</div>", unsafe_allow_html=True)
+
+        # --- 4. قسم KPIs (أرقام منطقية) ---
         st.subheader(l['summary'])
         c1, c2, c3, c4 = st.columns(4)
-        with c1: st.metric("Electricity/KG", f"{(df['ELEC'].sum()/prod_qty):.3f} kWh/kg")
-        with c2: st.metric("LPG/KG", f"{(df['LPG'].sum()*1000/prod_qty):.2f} g/kg")
-        with c3: st.metric("Water/KG", f"{(df['W_IN'].sum()*1000/prod_qty):.2f} L/kg")
+        with c1: 
+            # استهلاك الكهرباء لكل كيلو (رقم منطقي يكون عادة بين 0.1 و 1.5)
+            st.metric("Electricity/KG", f"{(df['ELEC'].sum()/prod_qty):.3f} kWh/kg")
+        with c2: 
+            # استهلاك الغاز لكل كيلو (تم التحويل لـ KG/KG لتجنب الأرقام الفلكية بالجرام)
+            st.metric("LPG/KG", f"{(df['LPG'].sum()/prod_qty):.4f} kg/kg")
+        with c3: 
+            # استهلاك الماء لكل كيلو (بالـ M3 لتوحيد الوحدات)
+            st.metric("Water/KG", f"{(df['W_IN'].sum()/prod_qty):.4f} m³/kg")
         with c4:
             loss = df['W_IN'].sum() - df['W_OUT'].sum()
             st.metric("Water Loss", f"{loss:,.0f} m³", f"{(loss/df['W_IN'].sum()*100 if df['W_IN'].sum()>0 else 0):.1f}%")
 
-        # --- 4. قسم خطوط الأساس (Baselines) ---
+        # --- 5. قسم خطوط الأساس (Baselines) ---
         st.subheader(l['baselines'])
         b1, b2, b3, b4 = st.columns(4)
         df['DT'] = pd.to_datetime(df['DATE'], errors='coerce')
@@ -108,26 +129,17 @@ if uploaded_file:
         with b3: st.metric("Avg Daily LPG", f"{df['LPG'].mean():,.1f} kg")
         with b4: st.metric("Avg Daily Water", f"{df['W_IN'].mean():,.1f} m³")
 
-        # --- 5. التنبؤ والشذوذ والرسوم ---
+        # --- 6. الشذوذ والرسوم ---
         st.markdown("---")
-        t1, t2 = st.columns([1, 2])
-        with t1:
-            st.subheader(l['forecast'])
-            days = len(df)
-            if 0 < days < 31:
-                st.info(f"Projected Elec: {(df['ELEC'].sum()/days)*30:,.0f} kWh")
-                st.info(f"Projected Water: {(df['W_IN'].sum()/days)*30:,.0f} m³")
-        
-        with t2:
-            st.subheader(l['anom'])
-            anom_found = False
-            for col, label in [('ELEC', 'Elec'), ('W_IN', 'Water')]:
-                m, s = df[col].mean(), df[col].std()
-                out = df[df[col] > (m + 2*s)]
-                for _, r in out.iterrows():
-                    st.warning(f"Peak {label} on {r['DATE']}: {r[col]:,.0f}")
-                    anom_found = True
-            if not anom_found: st.success("Stable Operations ✅")
+        st.subheader(l['anom'])
+        anom_found = False
+        for col, label in [('ELEC', 'Elec'), ('LPG', 'LPG'), ('W_IN', 'Water')]:
+            m, s = df[col].mean(), df[col].std()
+            out = df[df[col] > (m + 2*s)]
+            for _, r in out.iterrows():
+                st.warning(f"Peak {label} on {r['DATE']}: {r[col]:,.0f}")
+                anom_found = True
+        if not anom_found: st.success("Stable Operations ✅")
 
         st.plotly_chart(px.line(df, x='DATE', y=['ELEC', 'LPG', 'W_IN'], title="Daily Trends Analysis"), use_container_width=True)
 
