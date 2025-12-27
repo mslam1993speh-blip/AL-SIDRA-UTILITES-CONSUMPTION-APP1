@@ -3,32 +3,35 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 
-# إعدادات الصفحة
-st.set_page_config(page_title="Al-Sidra Intelligence", layout="wide")
+# --- الإعدادات الأساسية ---
+st.set_page_config(page_title="Al-Sidra Utilities Intelligence", layout="wide")
 
 # نظام تبديل اللغة
-if 'lang' not in st.session_state:
-    st.session_state.lang = 'Arabic'
-
-def toggle_lang():
-    st.session_state.lang = 'English' if st.session_state.lang == 'Arabic' else 'Arabic'
+if 'lang' not in st.session_state: st.session_state.lang = 'Arabic'
+def toggle_lang(): st.session_state.lang = 'English' if st.session_state.lang == 'Arabic' else 'Arabic'
 
 t = {
     'Arabic': {
-        'title': "🛡️ AL-SIDRA UTILITES INTELLIGENCE SYSTEM",
+        'title': "📊 AL-SIDRA UTILITES INTELLIGENCE SYSTEM",
         'lang_btn': "Switch to English",
-        'upload': "ارفع ملف DAILY REPORT 2025",
-        'anom_title': "🔍 كشف الشذوذ (Anomalies)",
-        'download': "تحميل البيانات CSV",
-        'no_file': "بانتظار رفع الملف..."
+        'filter': "اختر الفترة الزمنية",
+        'all_year': "السنة كاملة (2025)",
+        'summary': "📋 مؤشرات الأداء والنسب (KPIs & Ratios)",
+        'anom': "🚨 كشف الشذوذ والتنبيهات (Anomalies)",
+        'charts': "📈 الرسوم البيانية والتحليلات",
+        'download': "تحميل التقرير (CSV)",
+        'no_file': "نظام سدرة بانتظار رفع الملف..."
     },
     'English': {
-        'title': "🛡️ AL-SIDRA UTILITES INTELLIGENCE SYSTEM",
+        'title': "📊 AL-SIDRA UTILITES INTELLIGENCE SYSTEM",
         'lang_btn': "التحويل للعربية",
-        'upload': "Upload DAILY REPORT 2025",
-        'anom_title': "🔍 Anomaly Detection",
-        'download': "Download CSV",
-        'no_file': "Waiting for file upload..."
+        'filter': "Select Time Period",
+        'all_year': "Full Year (2025)",
+        'summary': "📋 Performance Summary & Ratios",
+        'anom': "🚨 Anomaly Detection & Alerts",
+        'charts': "📈 Analytics & Charts",
+        'download': "Download Report (CSV)",
+        'no_file': "System waiting for file upload..."
     }
 }
 l = t[st.session_state.lang]
@@ -36,7 +39,7 @@ l = t[st.session_state.lang]
 st.sidebar.button(l['lang_btn'], on_click=toggle_lang)
 st.title(l['title'])
 
-uploaded_file = st.sidebar.file_uploader(l['upload'], type=['xlsx'])
+uploaded_file = st.sidebar.file_uploader("Upload DAILY REPORT 2025", type=['xlsx'])
 
 if uploaded_file:
     try:
@@ -50,49 +53,69 @@ if uploaded_file:
             temp_df['MONTH'] = sheet
             dfs.append(temp_df)
         
-        df = pd.concat(dfs, ignore_index=True)
+        full_df = pd.concat(dfs, ignore_index=True)
 
-        # دالة ذكية للبحث عن الأعمدة لتجنب الـ KeyError
-        def find_col(keywords):
+        # فلترة الشهور
+        month_list = [l['all_year']] + list(full_df['MONTH'].unique())
+        selected_period = st.sidebar.selectbox(l['filter'], month_list)
+        df = full_df if selected_period == l['all_year'] else full_df[full_df['MONTH'] == selected_period]
+
+        # دالة الربط المرن للأعمدة (لتجنب KeyError)
+        def get_col_data(keys):
             for col in df.columns:
-                if any(k in col for k in keywords):
-                    return col
-            return None
+                if any(k in col for k in keys): return pd.to_numeric(df[col], errors='coerce').fillna(0)
+            return pd.Series([0]*len(df))
 
-        # ربط الأعمدة ديناميكياً
-        elec_col = find_col(['ELEC', 'كهرباء'])
-        lpg_col = find_col(['LPG', 'غاز'])
-        win_col = find_col(['WATER REC', 'WATER IN', 'وارد'])
-        wout_col = find_col(['SANIT', 'WATER OUT', 'صرف'])
+        df['ELEC'] = get_col_data(['ELEC', 'كهرباء'])
+        df['LPG'] = get_col_data(['LPG', 'غاز'])
+        df['W_IN'] = get_col_data(['WATER REC', 'WATER IN', 'وارد'])
+        df['W_OUT'] = get_col_data(['SANIT', 'WATER OUT', 'صرف', 'نضح'])
 
-        # تحويل البيانات مع معالجة الأخطاء
-        for col in [elec_col, lpg_col, win_col, wout_col]:
-            if col:
-                df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
-
-        # حساب KPIs
-        c1, c2, c3 = st.columns(3)
-        if elec_col:
-            c1.metric("Electricity Total", f"{df[elec_col].sum():,.0f} kWh")
-        if win_col and wout_col:
-            c2.metric("Water Loss", f"{df[win_col].sum() - df[wout_col].sum():,.0f} m³")
+        # --- 1. القسم الأول: KPIs & Ratios ---
+        st.subheader(f"{l['summary']} - {selected_period}")
+        c1, c2, c3, c4 = st.columns(4)
         
-        # كشف الشذوذ (Anomalies)
-        if elec_col:
-            mean_v = df[elec_col].mean()
-            std_v = df[elec_col].std()
-            anomalies = df[df[elec_col] > (mean_v + 2*std_v)]
-            if not anomalies.empty:
-                st.error(f"{l['anom_title']}")
-                st.dataframe(anomalies[['MONTH', 'DATE', elec_col]])
+        with c1:
+            loss_m3 = df['W_IN'].sum() - df['W_OUT'].sum()
+            loss_pct = (loss_m3 / df['W_IN'].sum() * 100) if df['W_IN'].sum() > 0 else 0
+            st.metric("Water Loss", f"{loss_m3:,.0f} m³", f"{loss_pct:.1f}% Loss")
+        
+        with c2:
+            e_ratio = (df['ELEC'].sum() / df['LPG'].sum()) if df['LPG'].sum() > 0 else 0
+            st.metric("Energy Efficiency", f"{e_ratio:.2f}", "KWH/LPG")
 
-        # الرسم البياني
-        if elec_col:
-            fig = px.line(df, x='DATE', y=elec_col, color='MONTH', title="Daily Consumption Trend")
-            st.plotly_chart(fig, use_container_width=True)
+        with c3:
+            df['DT'] = pd.to_datetime(df['DATE'], errors='coerce')
+            fri_base = df[df['DT'].dt.day_name() == 'Friday']['ELEC'].mean()
+            st.metric("Friday Baseline", f"{fri_base:,.0f} kWh")
+
+        with c4:
+            sum_base = df[df['MONTH'].str.upper().isin(['JUNE','JULY','AUGUST'])]['ELEC'].mean()
+            st.metric("Summer Baseline", f"{sum_base:,.0f} kWh")
+
+        st.markdown("---")
+
+        # --- 2. القسم الثاني: الشذوذ (Anomalies) ---
+        st.subheader(l['anom'])
+        anom_list = []
+        for col, name in [('ELEC', 'Electricity'), ('LPG', 'LPG'), ('W_IN', 'Water In')]:
+            m, s = df[col].mean(), df[col].std()
+            anoms = df[df[col] > (m + 2*s)]
+            for _, row in anoms.iterrows():
+                anom_list.append({'Date': row['DATE'], 'Utility': name, 'Value': row[col], 'Alert': 'High Peak ⚠️'})
+        
+        if anom_list: st.table(pd.DataFrame(anom_list))
+        else: st.success("Operations are normal.")
+
+        # --- 3. القسم الثالث: الرسوم البيانية ---
+        st.subheader(l['charts'])
+        fig = px.line(df, x='DATE', y=['ELEC', 'LPG', 'W_IN', 'W_OUT'], markers=True)
+        st.plotly_chart(fig, use_container_width=True)
+
+        # زر التحميل
+        st.download_button(l['download'], df.to_csv(index=False).encode('utf-8-sig'), "Sidra_Report.csv", "text/csv")
 
     except Exception as e:
-        st.error(f"Error reading columns: {e}")
-        st.info("تأكد من أن أسماء الأعمدة في الإكسيل قريبة من (ELECTRICITY, LPG, WATER)")
+        st.error(f"Error: {e}")
 else:
     st.info(l['no_file'])
