@@ -3,41 +3,57 @@ import pandas as pd
 import plotly.express as px
 import numpy as np
 
-# إعداد الصفحة
+# --- 1. إعدادات الصفحة والجماليات ---
 st.set_page_config(page_title="Al-Sidra Utilities Intelligence", layout="wide")
 
-# نظام تبديل اللغة
+st.markdown("""
+    <style>
+    .logo-img { display: block; margin: auto; width: 120px; border-radius: 50%; border: 2px solid #2E7D32; padding: 5px; }
+    .stMetric { background-color: #f8f9fa; border: 1px solid #e9ecef; padding: 10px; border-radius: 10px; }
+    </style>
+    """, unsafe_allow_html=True)
+
+# نظام اللغة
 if 'lang' not in st.session_state: st.session_state.lang = 'Arabic'
 def toggle_lang(): st.session_state.lang = 'English' if st.session_state.lang == 'Arabic' else 'Arabic'
 
 t = {
     'Arabic': {
-        'title': "📊 AL-SIDRA UTILITES INTELLIGENCE SYSTEM",
+        'title': "📊 نظام سدرة الذكي للمرافق والإنتاج",
         'lang_btn': "Switch to English",
-        'filter': "اختر الفترة الزمنية",
-        'all_year': "السنة كاملة (2025)",
-        'summary': "📋 مؤشرات الأداء والنسب (KPIs & Ratios)",
-        'anom': "🚨 كشف الشذوذ والتنبيهات (Anomalies)",
-        'charts': "📈 الرسوم البيانية والتحليلات",
-        'no_file': "نظام سدرة بانتظار رفع الملف..."
+        'prod_input': "إدخال كمية الإنتاج (كيلوغرام)",
+        'summary': "📋 مؤشرات كفاءة الإنتاج (Baselines per KG)",
+        'charts': "📈 تحليل الاستهلاك والإنتاج",
+        'footer': "تم بواسطة قسم الصيانة (المرافق)"
     },
     'English': {
-        'title': "📊 AL-SIDRA UTILITES INTELLIGENCE SYSTEM",
+        'title': "📊 AL-SIDRA UTILITIES & PRODUCTION INTELLIGENCE",
         'lang_btn': "التحويل للعربية",
-        'filter': "Select Time Period",
-        'all_year': "Full Year (2025)",
-        'summary': "📋 Performance Summary & Ratios",
-        'anom': "🚨 Anomaly Detection & Alerts",
-        'charts': "📈 Analytics & Charts",
-        'no_file': "System waiting for file upload..."
+        'prod_input': "Production Quantity (KG)",
+        'summary': "📋 Production Efficiency (Baselines per KG)",
+        'charts': "📈 Consumption & Production Analytics",
+        'footer': "Done by Maintenance Department (Utilities)"
     }
 }
 l = t[st.session_state.lang]
 
-st.sidebar.button(l['lang_btn'], on_click=toggle_lang)
-st.title(l['title'])
+# --- 2. القائمة الجانبية (الشعار + الإنتاج) ---
+with st.sidebar:
+    # الشعار
+    st.markdown(f'<img src="https://raw.githubusercontent.com/mslam1993speh-blip/al-sidra-utilites-consumption-app1/main/logo.png" class="logo-img">', unsafe_allow_html=True)
+    st.markdown(f"<h3 style='text-align: center;'>AL-SIDRA</h3>", unsafe_allow_html=True)
+    st.button(l['lang_btn'], on_click=toggle_lang)
+    st.markdown("---")
+    
+    uploaded_file = st.file_uploader("Upload DAILY REPORT 2025", type=['xlsx'])
+    
+    # مدخلات الإنتاج يدوياً لكل شهر
+    st.subheader(l['prod_input'])
+    prod_qty = st.number_input("Chicken Production (KG)", min_value=1.0, value=100000.0, step=1000.0)
+    st.markdown("---")
+    st.write(l['footer'])
 
-uploaded_file = st.sidebar.file_uploader("Upload DAILY REPORT 2025", type=['xlsx'])
+st.title(l['title'])
 
 if uploaded_file:
     try:
@@ -54,11 +70,11 @@ if uploaded_file:
         full_df = pd.concat(dfs, ignore_index=True)
 
         # فلترة الشهور
-        month_list = [l['all_year']] + list(full_df['MONTH'].unique())
-        selected_period = st.sidebar.selectbox(l['filter'], month_list)
-        df = full_df if selected_period == l['all_year'] else full_df[full_df['MONTH'] == selected_period]
+        month_list = list(full_df['MONTH'].unique())
+        selected_month = st.selectbox("Select Month for Efficiency Analysis", month_list)
+        df = full_df[full_df['MONTH'] == selected_month]
 
-        # سحب البيانات (بناءً على الترتيب والأسماء)
+        # سحب البيانات
         def get_col(keys):
             for col in df.columns:
                 if any(k in col for k in keys): return pd.to_numeric(df[col], errors='coerce').fillna(0)
@@ -67,39 +83,31 @@ if uploaded_file:
         df['ELEC'] = get_col(['ELEC', 'كهرباء'])
         df['LPG'] = get_col(['LPG', 'غاز'])
         df['W_IN'] = get_col(['WATER REC', 'وارد'])
-        df['W_OUT'] = get_col(['SANIT', 'صرف', 'نضح'])
 
-        # حساب KPIs مع معالجة الـ nan
-        st.subheader(f"{l['summary']} - {selected_period}")
-        c1, c2, c3, c4 = st.columns(4)
+        # --- 3. حساب مؤشرات الإنتاج (Efficiency Baselines) ---
+        st.subheader(f"{l['summary']} - {selected_month}")
+        k1, k2, k3 = st.columns(3)
         
-        with c1:
-            loss = df['W_IN'].sum() - df['W_OUT'].sum()
-            lpct = (loss / df['W_IN'].sum() * 100) if df['W_IN'].sum() > 0 else 0
-            st.metric("Water Loss", f"{loss:,.0f} m³", f"{lpct:.1f}% Loss")
+        with k1:
+            elec_per_kg = df['ELEC'].sum() / prod_qty
+            st.metric("Electricity/KG", f"{elec_per_kg:.3f} kWh/kg", delta="Power Efficiency")
         
-        with c2:
-            e_ratio = (df['ELEC'].sum() / df['LPG'].sum()) if df['LPG'].sum() > 0 else 0
-            st.metric("Energy Efficiency", f"{e_ratio:.2f}", "KWH/LPG")
+        with k2:
+            lpg_per_kg = (df['LPG'].sum() * 1000) / prod_qty # تحويل لغرام لسهولة القراءة
+            st.metric("LPG/KG", f"{lpg_per_kg:.2f} g/kg", delta="Gas Efficiency")
 
-        with c3:
-            df['DT'] = pd.to_datetime(df['DATE'], errors='coerce')
-            f_data = df[df['DT'].dt.day_name() == 'Friday']['ELEC']
-            f_base = f_data.mean() if not f_data.empty else 0
-            st.metric("Friday Baseline", f"{np.nan_to_num(f_base):,.0f} kWh")
-
-        with c4:
-            s_months = ['JUNE', 'JULY', 'AUGUST', 'يونيو', 'يوليو', 'أغسطس']
-            s_data = df[df['MONTH'].str.upper().isin(s_months)]['ELEC']
-            s_base = s_data.mean() if not s_data.empty else 0
-            st.metric("Summer Baseline", f"{np.nan_to_num(s_base):,.0f} kWh")
+        with k3:
+            water_per_kg = (df['W_IN'].sum() * 1000) / prod_qty # تحويل للتر
+            st.metric("Water/KG", f"{water_per_kg:.2f} L/kg", delta="Water Efficiency")
 
         st.markdown("---")
+        
         # الرسوم البيانية
         st.subheader(l['charts'])
-        st.plotly_chart(px.line(df, x='DATE', y=['ELEC', 'LPG', 'W_IN', 'W_OUT'], markers=True), use_container_width=True)
+        fig = px.bar(df, x='DATE', y=['ELEC', 'LPG'], title=f"Daily Consumption vs Production for {selected_month}")
+        st.plotly_chart(fig, use_container_width=True)
 
     except Exception as e:
         st.error(f"Error: {e}")
 else:
-    st.info(l['no_file'])
+    st.info("Waiting for file...")
