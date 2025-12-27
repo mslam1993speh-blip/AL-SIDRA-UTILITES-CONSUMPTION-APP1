@@ -9,8 +9,8 @@ st.set_page_config(page_title="Sidra Utilities Intelligence", layout="wide")
 st.markdown("""
     <style>
     .stMetric { background-color: #ffffff; border: 1px solid #e0e0e0; padding: 15px; border-radius: 10px; box-shadow: 2px 2px 5px rgba(0,0,0,0.05); }
-    .anomaly-card { background-color: #fff3f3; border-left: 5px solid #ff4b4b; padding: 10px; border-radius: 5px; margin-bottom: 10px; }
     .forecast-box { background-color: #e8f5e9; border: 1px dashed #2e7d32; padding: 15px; border-radius: 10px; text-align: center; font-weight: bold; margin-bottom: 20px; }
+    .anomaly-card { background-color: #fff3f3; border-left: 5px solid #ff4b4b; padding: 10px; border-radius: 5px; margin-bottom: 10px; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -41,7 +41,7 @@ translations = {
 }
 l = translations[st.session_state.lang]
 
-# --- 2. القائمة الجانبية (Sidebar) ---
+# --- 2. القائمة الجانبية ---
 with st.sidebar:
     try:
         st.image("al sidra new.jpg", use_container_width=True)
@@ -51,8 +51,9 @@ with st.sidebar:
     st.button(l['lang_btn'], on_click=toggle_lang)
     st.markdown("---")
     uploaded_file = st.file_uploader("Upload DAILY REPORT 2025", type=['xlsx'])
-    # القيمة الافتراضية للإنتاج تم تعديلها لتناسب المصانع الكبيرة
-    prod_qty = st.number_input("Chicken Production (KG)", min_value=1.0, value=150000.0)
+    
+    # تأكد من إدخال إجمالي إنتاج الشهر بالكيلوجرام (مثلاً 150000 كجم)
+    prod_qty = st.number_input("Total Monthly Production (KG)", min_value=1.0, value=150000.0)
     st.markdown("---")
     st.markdown(f"<div style='text-align:center; color:grey; font-size:12px;'>{l['footer']}</div>", unsafe_allow_html=True)
 
@@ -85,42 +86,42 @@ if uploaded_file:
         df['W_IN'] = get_col(['WATER REC', 'وارد'])
         df['W_OUT'] = get_col(['SANIT', 'صرف', 'نضح'])
 
-        # --- 3. التنبؤ بنهاية الشهر (Forecast) ---
-        # يظهر التنبؤ عند اختيار شهر محدد أو حتى السنة كاملة بناءً على المتوسط اليومي
+        # --- 3. التنبؤ الذكي (Forecast) ---
         st.subheader(l['forecast'])
         days_in_data = len(df)
         if days_in_data > 0:
-            # حساب التوقعات بناءً على متوسط الاستهلاك اليومي مضروباً في 30 يوماً
             p_elec = (df['ELEC'].sum() / days_in_data) * 30
             p_lpg = (df['LPG'].sum() / days_in_data) * 30
-            p_water = (df['W_IN'].sum() / days_passed) * 30 if 'days_passed' in locals() else (df['W_IN'].sum() / days_in_data) * 30
+            p_water = (df['W_IN'].sum() / days_in_data) * 30
             
             f1, f2, f3 = st.columns(3)
             f1.markdown(f"<div class='forecast-box'>⚡ {l['forecast']} (Elec):<br>{p_elec:,.0f} kWh</div>", unsafe_allow_html=True)
             f2.markdown(f"<div class='forecast-box'>🔥 {l['forecast']} (LPG):<br>{p_lpg:,.0f} kg</div>", unsafe_allow_html=True)
             f3.markdown(f"<div class='forecast-box'>💧 {l['forecast']} (Water):<br>{p_water:,.0f} m³</div>", unsafe_allow_html=True)
 
-        # --- 4. قسم KPIs (أرقام منطقية) ---
+        # --- 4. حساب KPIs (تصحيح الحسبة لتكون منطقية) ---
+        # الحسبة تعتمد على (متوسط الاستهلاك اليومي / متوسط الإنتاج اليومي) لضمان دقة الرقم
+        avg_daily_prod = prod_qty / 30 
+        
         st.subheader(l['summary'])
         c1, c2, c3, c4 = st.columns(4)
-        with c1: 
-            # استهلاك الكهرباء لكل كيلو (رقم منطقي يكون عادة بين 0.1 و 1.5)
-            st.metric("Electricity/KG", f"{(df['ELEC'].sum()/prod_qty):.3f} kWh/kg")
-        with c2: 
-            # استهلاك الغاز لكل كيلو (تم التحويل لـ KG/KG لتجنب الأرقام الفلكية بالجرام)
-            st.metric("LPG/KG", f"{(df['LPG'].sum()/prod_qty):.4f} kg/kg")
-        with c3: 
-            # استهلاك الماء لكل كيلو (بالـ M3 لتوحيد الوحدات)
-            st.metric("Water/KG", f"{(df['W_IN'].sum()/prod_qty):.4f} m³/kg")
+        with c1:
+            elec_per_kg = (df['ELEC'].mean() / avg_daily_prod) if avg_daily_prod > 0 else 0
+            st.metric("Electricity/KG", f"{elec_per_kg:.3f} kWh/kg")
+        with c2:
+            lpg_per_kg = (df['LPG'].mean() / avg_daily_prod) if avg_daily_prod > 0 else 0
+            st.metric("LPG/KG", f"{lpg_per_kg:.4f} kg/kg")
+        with c3:
+            water_per_kg = (df['W_IN'].mean() / avg_daily_prod) if avg_daily_prod > 0 else 0
+            st.metric("Water/KG", f"{(water_per_kg * 1000):.2f} L/kg") # تحويل للتر لسهولة القراءة
         with c4:
             loss = df['W_IN'].sum() - df['W_OUT'].sum()
             st.metric("Water Loss", f"{loss:,.0f} m³", f"{(loss/df['W_IN'].sum()*100 if df['W_IN'].sum()>0 else 0):.1f}%")
 
-        # --- 5. قسم خطوط الأساس (Baselines) ---
+        # --- 5. خطوط الأساس (Baselines) ---
         st.subheader(l['baselines'])
         b1, b2, b3, b4 = st.columns(4)
         df['DT'] = pd.to_datetime(df['DATE'], errors='coerce')
-        
         friday_data = df[df['DT'].dt.day_name() == 'Friday']
         summer_data = df[df['MONTH'].str.upper().isin(['JUNE', 'JULY', 'AUGUST', 'يونيو', 'يوليو', 'أغسطس'])]
 
@@ -133,7 +134,7 @@ if uploaded_file:
         st.markdown("---")
         st.subheader(l['anom'])
         anom_found = False
-        for col, label in [('ELEC', 'Elec'), ('LPG', 'LPG'), ('W_IN', 'Water')]:
+        for col, label in [('ELEC', 'Elec'), ('W_IN', 'Water')]:
             m, s = df[col].mean(), df[col].std()
             out = df[df[col] > (m + 2*s)]
             for _, r in out.iterrows():
