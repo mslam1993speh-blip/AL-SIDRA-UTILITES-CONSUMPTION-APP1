@@ -1,56 +1,73 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
+import plotly.graph_objects as go
 
-# إعدادات الصفحة
-st.set_page_config(page_title="نظام تحليل المرافق - سدرة", layout="wide")
+# إعدادات الصفحة الاحترافية
+st.set_page_config(page_title="Sidra Utilities Dashboard", layout="wide")
 
-st.title("📊 منظومة مراقبة استهلاك الطاقة والمرافق (2025)")
-st.sidebar.header("لوحة التحكم")
+# تنسيق العنوان
+st.markdown("<h1 style='text-align: center; color: #2E7D32;'>📊 نظام مراقبة وتحليل مرافق سدرة - 2025</h1>", unsafe_allow_html=True)
+st.markdown("---")
 
-# رفع الملف
-uploaded_file = st.sidebar.file_uploader("ارفع ملف الإكسيل السنوي", type=['xlsx'])
+# القائمة الجانبية للتحكم
+with st.sidebar:
+    st.header("⚙️ لوحة التحكم")
+    uploaded_file = st.file_uploader("ارفع ملف DAILY REPORT 2025", type=['xlsx'])
+    st.info("قم برفع ملف الإكسيل لظهور التقارير تلقائياً")
 
 if uploaded_file:
-    # قراءة البيانات
+    # معالجة البيانات
     xl = pd.ExcelFile(uploaded_file)
-    all_data = []
+    dfs = []
     for sheet in xl.sheet_names:
-        df = xl.parse(sheet)
-        df.columns = [str(c).strip().upper() for c in df.columns]
-        df.rename(columns={'DAY': 'DATE'}, inplace=True)
-        df = df[pd.to_numeric(df['DATE'], errors='coerce').notnull()]
-        df['MONTH'] = sheet
-        all_data.append(df)
+        temp_df = xl.parse(sheet)
+        temp_df.columns = [str(c).strip().upper() for c in temp_df.columns]
+        temp_df.rename(columns={'DAY': 'DATE'}, inplace=True)
+        temp_df = temp_df[pd.to_numeric(temp_df['DATE'], errors='coerce').notnull()]
+        temp_df['MONTH'] = sheet
+        dfs.append(temp_df)
     
-    master_df = pd.concat(all_data, ignore_index=True)
+    df = pd.concat(dfs, ignore_index=True)
     
-    # تنظيف الأعمدة
-    cols = ['ELECTRICITY (KWH)', 'LPG CONS (KG)', 'WATER CONS (M3)', 'SANITAION (M3)']
-    for col in cols:
-        if col in master_df.columns:
-            master_df[col] = pd.to_numeric(master_df[col], errors='coerce').fillna(0)
+    # تنظيف الأرقام (تأكد أن أسماء الأعمدة مطابقة لملفك)
+    cols = {'ELECTRICITY (KWH)': 'الكهرباء', 'LPG CONS (KG)': 'الغاز', 'WATER CONS (M3)': 'المياه'}
+    for eng_col, arb_col in cols.items():
+        if eng_col in df.columns:
+            df[eng_col] = pd.to_numeric(df[eng_col], errors='coerce').fillna(0)
 
-    # عرض الإحصائيات السريعة (KPIs)
-    col1, col2, col3 = st.columns(3)
-    col1.metric("إجمالي الكهرباء", f"{master_df['ELECTRICITY (KWH)'].sum():,.0f} kWh")
-    col2.metric("إجمالي الغاز (LPG)", f"{master_df['LPG CONS (KG)'].sum():,.0f} kg")
-    col3.metric("إجمالي المياه", f"{master_df['WATER CONS (M3)'].sum():,.0f} m³")
-
-    # رسم بياني تفاعلي
-    st.subheader("📈 تحليل الاتجاهات الزمني")
-    option = st.selectbox("اختر المعيار للتحليل", cols)
-    fig = px.line(master_df, x='DATE', y=option, color='MONTH', title=f"تحليل استهلاك {option}")
-    st.plotly_chart(fig, use_container_width=True)
-
-    # مقارنة الأداء (Baseline)
-    st.subheader("💡 مقارنة كفاءة التبريد (أيام الجمعة)")
+    # --- القسم الأول: مؤشرات الأداء الرئيسية (KPIs) ---
+    st.subheader("📌 مؤشرات الاستهلاك الإجمالية")
+    kpi1, kpi2, kpi3 = st.columns(3)
     
-    notes_col = next((c for c in master_df.columns if 'NOTE' in c or 'EVENT' in c), None)
-    master_df['TYPE'] = master_df[notes_col].astype(str).str.upper().str.contains('FRIDAY|OFF').map({True:'Base Load (Cooling)', False:'Production Day'})
-    
-    fig2 = px.box(master_df, x='MONTH', y='ELECTRICITY (KWH)', color='TYPE', title="توزيع استهلاك الكهرباء بين الإنتاج والحمل الثابت")
-    st.plotly_chart(fig2, use_container_width=True)
+    with kpi1:
+        st.metric("إجمالي الكهرباء (kWh)", f"{df['ELECTRICITY (KWH)'].sum():,.0f}", delta="سنوي")
+    with kpi2:
+        st.metric("إجمالي الغاز (kg)", f"{df['LPG CONS (KG)'].sum():,.0f}", delta_color="inverse")
+    with kpi3:
+        st.metric("إجمالي المياه (m³)", f"{df['WATER CONS (M3)'].sum():,.0f}")
+
+    st.markdown("---")
+
+    # --- القسم الثاني: التقارير والرسوم البيانية ---
+    col_left, col_right = st.columns(2)
+
+    with col_left:
+        st.subheader("📈 توجه الاستهلاك الشهري")
+        monthly_data = df.groupby('MONTH')['ELECTRICITY (KWH)'].sum().reset_index()
+        fig_line = px.line(df, x='DATE', y='ELECTRICITY (KWH)', color='MONTH', title="الاستهلاك اليومي لكل شهر")
+        st.plotly_chart(fig_line, use_container_width=True)
+
+    with col_right:
+        st.subheader("📊 توزيع الاستهلاك حسب المرفق")
+        totals = [df['ELECTRICITY (KWH)'].sum(), df['LPG CONS (KG)'].sum(), df['WATER CONS (M3)'].sum()]
+        fig_pie = px.pie(values=totals, names=['الكهرباء', 'الغاز', 'المياه'], hole=0.4, title="نسبة الاستهلاك العام")
+        st.plotly_chart(fig_pie, use_container_width=True)
+
+    # --- القسم الثالث: جدول التقارير المفصل ---
+    st.subheader("📋 تقرير البيانات التفصيلي")
+    st.dataframe(df[['MONTH', 'DATE', 'ELECTRICITY (KWH)', 'LPG CONS (KG)', 'WATER CONS (M3)']], use_container_width=True)
 
 else:
-    st.info("الرجاء رفع ملف الإكسيل من القائمة الجانبية لتفعيل الداشبورد.")
+    # رسالة ترحيبية في حال عدم وجود ملف
+    st.warning("⚠️ بانتظار رفع ملف البيانات من القائمة الجانبية لتوليد التقارير...")
