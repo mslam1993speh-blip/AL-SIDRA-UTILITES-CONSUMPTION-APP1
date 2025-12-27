@@ -1,38 +1,63 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-import plotly.graph_objects as go
+import numpy as np
 
-# --- الإعدادات الأساسية ---
+# --- 1. إعدادات الصفحة والشعار ---
 st.set_page_config(page_title="Al-Sidra Utilities Intelligence", layout="wide")
 
-# نظام تبديل اللغة
+# كود لتعديل شكل الشعار ليصبح ناعم ودائري (CSS)
+st.markdown("""
+    <style>
+    [data-testid="stSidebarNav"] {
+        padding-top: 20px;
+    }
+    .logo-img {
+        display: block;
+        margin-left: auto;
+        margin-right: auto;
+        width: 120px;
+        border-radius: 50%; /* لجعل الصورة دائرية */
+        border: 2px solid #2E7D32; /* إطار خفيف بلون المصنع */
+        padding: 5px;
+    }
+    .footer {
+        position: fixed;
+        left: 10px;
+        bottom: 10px;
+        width: 250px;
+        color: grey;
+        font-size: 12px;
+        text-align: center;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
+# --- 2. القائمة الجانبية (الشعار والحقوق) ---
+with st.sidebar:
+    # ضع رابط صورة شعار الشركة هنا أو ارفعها على GitHub واستخدم الرابط
+    # إذا كانت الصورة موجودة بجانب الملف سمّها logo.png واستبدل الرابط بـ "logo.png"
+    logo_url = "https://raw.githubusercontent.com/mslam1993speh-blip/al-sidra-utilites-consumption-app1/main/logo.png" # مثال لرابط
+    
+    st.markdown(f'<img src="{logo_url}" class="logo-img">', unsafe_allow_html=True)
+    st.markdown("<h3 style='text-align: center; color: #2E7D32;'>Al-Sidra Factory</h3>", unsafe_allow_html=True)
+    st.markdown("---")
+    
+    # إضافة عبارة الحقوق في أسفل القائمة الجانبية بشكل ناعم
+    st.markdown("""
+        <div style='text-align: center; margin-top: 50px; font-size: 0.8em; color: #666;'>
+            Done by Maintenance Department (Utilities)
+        </div>
+    """, unsafe_allow_html=True)
+
+# --- باقي الكود البرمجي (نفس النسخة المصححة السابقة) ---
+
 if 'lang' not in st.session_state: st.session_state.lang = 'Arabic'
 def toggle_lang(): st.session_state.lang = 'English' if st.session_state.lang == 'Arabic' else 'Arabic'
 
 t = {
-    'Arabic': {
-        'title': "📊 AL-SIDRA UTILITES INTELLIGENCE SYSTEM",
-        'lang_btn': "Switch to English",
-        'filter': "اختر الفترة الزمنية",
-        'all_year': "السنة كاملة (2025)",
-        'summary': "📋 مؤشرات الأداء والنسب (KPIs & Ratios)",
-        'anom': "🚨 كشف الشذوذ والتنبيهات (Anomalies)",
-        'charts': "📈 الرسوم البيانية والتحليلات",
-        'download': "تحميل التقرير (CSV)",
-        'no_file': "نظام سدرة بانتظار رفع الملف..."
-    },
-    'English': {
-        'title': "📊 AL-SIDRA UTILITES INTELLIGENCE SYSTEM",
-        'lang_btn': "التحويل للعربية",
-        'filter': "Select Time Period",
-        'all_year': "Full Year (2025)",
-        'summary': "📋 Performance Summary & Ratios",
-        'anom': "🚨 Anomaly Detection & Alerts",
-        'charts': "📈 Analytics & Charts",
-        'download': "Download Report (CSV)",
-        'no_file': "System waiting for file upload..."
-    }
+    'Arabic': {'title': "📊 AL-SIDRA UTILITES INTELLIGENCE SYSTEM", 'lang_btn': "Switch to English", 'no_file': "بانتظار الملف..."},
+    'English': {'title': "📊 AL-SIDRA UTILITES INTELLIGENCE SYSTEM", 'lang_btn': "التحويل للعربية", 'no_file': "Waiting for file..."}
 }
 l = t[st.session_state.lang]
 
@@ -55,65 +80,23 @@ if uploaded_file:
         
         full_df = pd.concat(dfs, ignore_index=True)
 
-        # فلترة الشهور
-        month_list = [l['all_year']] + list(full_df['MONTH'].unique())
-        selected_period = st.sidebar.selectbox(l['filter'], month_list)
-        df = full_df if selected_period == l['all_year'] else full_df[full_df['MONTH'] == selected_period]
+        def get_col(keys):
+            for col in full_df.columns:
+                if any(k in col for k in keys): return pd.to_numeric(full_df[col], errors='coerce').fillna(0)
+            return pd.Series([0]*len(full_df))
 
-        # دالة الربط المرن للأعمدة (لتجنب KeyError)
-        def get_col_data(keys):
-            for col in df.columns:
-                if any(k in col for k in keys): return pd.to_numeric(df[col], errors='coerce').fillna(0)
-            return pd.Series([0]*len(df))
+        full_df['ELEC'] = get_col(['ELEC', 'كهرباء'])
+        full_df['LPG'] = get_col(['LPG', 'غاز'])
+        full_df['W_IN'] = get_col(['WATER REC', 'وارد'])
+        full_df['W_OUT'] = get_col(['SANIT', 'صرف', 'نضح'])
 
-        df['ELEC'] = get_col_data(['ELEC', 'كهرباء'])
-        df['LPG'] = get_col_data(['LPG', 'غاز'])
-        df['W_IN'] = get_col_data(['WATER REC', 'WATER IN', 'وارد'])
-        df['W_OUT'] = get_col_data(['SANIT', 'WATER OUT', 'صرف', 'نضح'])
-
-        # --- 1. القسم الأول: KPIs & Ratios ---
-        st.subheader(f"{l['summary']} - {selected_period}")
+        # حساب KPIs مع معالجة nan
         c1, c2, c3, c4 = st.columns(4)
+        with c1: st.metric("Water Loss", f"{(full_df['W_IN'].sum()-full_df['W_OUT'].sum()):,.0f} m³")
+        with c2: st.metric("KWH/LPG", f"{(full_df['ELEC'].sum()/full_df['LPG'].sum() if full_df['LPG'].sum()>0 else 0):.2f}")
         
-        with c1:
-            loss_m3 = df['W_IN'].sum() - df['W_OUT'].sum()
-            loss_pct = (loss_m3 / df['W_IN'].sum() * 100) if df['W_IN'].sum() > 0 else 0
-            st.metric("Water Loss", f"{loss_m3:,.0f} m³", f"{loss_pct:.1f}% Loss")
-        
-        with c2:
-            e_ratio = (df['ELEC'].sum() / df['LPG'].sum()) if df['LPG'].sum() > 0 else 0
-            st.metric("Energy Efficiency", f"{e_ratio:.2f}", "KWH/LPG")
-
-        with c3:
-            df['DT'] = pd.to_datetime(df['DATE'], errors='coerce')
-            fri_base = df[df['DT'].dt.day_name() == 'Friday']['ELEC'].mean()
-            st.metric("Friday Baseline", f"{fri_base:,.0f} kWh")
-
-        with c4:
-            sum_base = df[df['MONTH'].str.upper().isin(['JUNE','JULY','AUGUST'])]['ELEC'].mean()
-            st.metric("Summer Baseline", f"{sum_base:,.0f} kWh")
-
-        st.markdown("---")
-
-        # --- 2. القسم الثاني: الشذوذ (Anomalies) ---
-        st.subheader(l['anom'])
-        anom_list = []
-        for col, name in [('ELEC', 'Electricity'), ('LPG', 'LPG'), ('W_IN', 'Water In')]:
-            m, s = df[col].mean(), df[col].std()
-            anoms = df[df[col] > (m + 2*s)]
-            for _, row in anoms.iterrows():
-                anom_list.append({'Date': row['DATE'], 'Utility': name, 'Value': row[col], 'Alert': 'High Peak ⚠️'})
-        
-        if anom_list: st.table(pd.DataFrame(anom_list))
-        else: st.success("Operations are normal.")
-
-        # --- 3. القسم الثالث: الرسوم البيانية ---
-        st.subheader(l['charts'])
-        fig = px.line(df, x='DATE', y=['ELEC', 'LPG', 'W_IN', 'W_OUT'], markers=True)
-        st.plotly_chart(fig, use_container_width=True)
-
-        # زر التحميل
-        st.download_button(l['download'], df.to_csv(index=False).encode('utf-8-sig'), "Sidra_Report.csv", "text/csv")
+        # الرسوم البيانية
+        st.plotly_chart(px.line(full_df, x='DATE', y=['ELEC', 'LPG', 'W_IN', 'W_OUT'], markers=True), use_container_width=True)
 
     except Exception as e:
         st.error(f"Error: {e}")
