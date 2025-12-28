@@ -26,7 +26,8 @@ translations = {
         'baselines': "📉 خطوط الأساس (Baselines)",
         'forecast': "🔮 التنبؤ بالاستهلاك المتوقع بنهاية الشهر",
         'anom': "🚨 كشف الشذوذ والتنبيهات",
-        'footer': "Done by Maintenance Department (Utilities)"
+        'footer': "Done by Maintenance Department (Utilities)",
+        'off_baseline': "خط أساس (الجمع وأيام العطل)"
     },
     'English': {
         'title': "📊 SIDRA COMPREHENSIVE UTILITIES & PRODUCTION SYSTEM",
@@ -36,7 +37,8 @@ translations = {
         'baselines': "📉 Baselines Analysis",
         'forecast': "🔮 Monthly Forecast",
         'anom': "🚨 Anomaly Detection",
-        'footer': "Done by Maintenance Department (Utilities)"
+        'footer': "Done by Maintenance Department (Utilities)",
+        'off_baseline': "Friday & Day-Off Baseline"
     }
 }
 l = translations[st.session_state.lang]
@@ -52,7 +54,6 @@ with st.sidebar:
     st.markdown("---")
     uploaded_file = st.file_uploader("Upload DAILY REPORT 2025", type=['xlsx'])
     
-    # تأكد من إدخال إجمالي إنتاج الشهر بالكيلوجرام (مثلاً 150000 كجم)
     prod_qty = st.number_input("Total Monthly Production (KG)", min_value=1.0, value=150000.0)
     st.markdown("---")
     st.markdown(f"<div style='text-align:center; color:grey; font-size:12px;'>{l['footer']}</div>", unsafe_allow_html=True)
@@ -99,8 +100,7 @@ if uploaded_file:
             f2.markdown(f"<div class='forecast-box'>🔥 {l['forecast']} (LPG):<br>{p_lpg:,.0f} kg</div>", unsafe_allow_html=True)
             f3.markdown(f"<div class='forecast-box'>💧 {l['forecast']} (Water):<br>{p_water:,.0f} m³</div>", unsafe_allow_html=True)
 
-        # --- 4. حساب KPIs (تصحيح الحسبة لتكون منطقية) ---
-        # الحسبة تعتمد على (متوسط الاستهلاك اليومي / متوسط الإنتاج اليومي) لضمان دقة الرقم
+        # --- 4. حساب KPIs ---
         avg_daily_prod = prod_qty / 30 
         
         st.subheader(l['summary'])
@@ -113,20 +113,27 @@ if uploaded_file:
             st.metric("LPG/KG", f"{lpg_per_kg:.4f} kg/kg")
         with c3:
             water_per_kg = (df['W_IN'].mean() / avg_daily_prod) if avg_daily_prod > 0 else 0
-            st.metric("Water/KG", f"{(water_per_kg * 1000):.2f} L/kg") # تحويل للتر لسهولة القراءة
+            st.metric("Water/KG", f"{(water_per_kg * 1000):.2f} L/kg")
         with c4:
             loss = df['W_IN'].sum() - df['W_OUT'].sum()
             st.metric("Water Loss", f"{loss:,.0f} m³", f"{(loss/df['W_IN'].sum()*100 if df['W_IN'].sum()>0 else 0):.1f}%")
 
-        # --- 5. خطوط الأساس (Baselines) ---
+        # --- 5. خطوط الأساس (المعدلة لدمج الجمعة والعطل) ---
         st.subheader(l['baselines'])
         b1, b2, b3, b4 = st.columns(4)
         df['DT'] = pd.to_datetime(df['DATE'], errors='coerce')
-        friday_data = df[df['DT'].dt.day_name() == 'Friday']
-        summer_data = df[df['MONTH'].str.upper().isin(['JUNE', 'JULY', 'AUGUST', 'يونيو', 'يوليو', 'أغسطس'])]
-
-        with b1: st.metric("Friday Elec Baseline", f"{np.nan_to_num(friday_data['ELEC'].mean()):,.0f} kWh")
-        with b2: st.metric("Summer Elec Baseline", f"{np.nan_to_num(summer_data['ELEC'].mean()):,.0f} kWh")
+        
+        # منطق ذكي: العطلة هي (يوم جمعة) أو (أي يوم استهلاكه أقل من 40% من المتوسط)
+        avg_elec = df['ELEC'].mean()
+        off_days_df = df[(df['DT'].dt.day_name() == 'Friday') | (df['ELEC'] < avg_elec * 0.4)]
+        
+        with b1: 
+            off_val = off_days_df['ELEC'].mean() if not off_days_df.empty else df['ELEC'].min()
+            st.metric(l['off_baseline'], f"{off_val:,.0f} kWh")
+            
+        with b2: 
+            summer_data = df[df['MONTH'].str.upper().isin(['JUNE', 'JULY', 'AUGUST', 'يونيو', 'يوليو', 'أغسطس'])]
+            st.metric("Summer Elec Baseline", f"{np.nan_to_num(summer_data['ELEC'].mean()):,.0f} kWh")
         with b3: st.metric("Avg Daily LPG", f"{df['LPG'].mean():,.1f} kg")
         with b4: st.metric("Avg Daily Water", f"{df['W_IN'].mean():,.1f} m³")
 
@@ -148,4 +155,3 @@ if uploaded_file:
         st.error(f"Error: {e}")
 else:
     st.info("System Ready. Please upload Excel.")
-
