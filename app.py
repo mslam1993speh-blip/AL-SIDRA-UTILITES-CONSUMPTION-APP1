@@ -3,37 +3,14 @@ import pandas as pd
 import plotly.express as px
 import numpy as np
 
-# --- 1. التنسيق البصري (ألوان فاقعة ومتباينة) ---
-st.set_page_config(page_title="Sidra Intelligence", layout="wide")
+# --- 1. الإعدادات والجماليات ---
+st.set_page_config(page_title="Sidra Utilities Intelligence", layout="wide")
 
 st.markdown("""
     <style>
-    /* تنسيق المؤشرات خلفية سوداء وإطار أخضر */
-    [data-testid="stMetric"] {
-        background-color: #000000;
-        border: 3px solid #00FF00;
-        padding: 20px;
-        border-radius: 15px;
-    }
-    /* رقم المؤشر أحمر فاقع */
-    [data-testid="stMetricValue"] {
-        color: #FF0000 !important;
-        font-size: 35px !important;
-    }
-    /* عنوان المؤشر أبيض */
-    [data-testid="stMetricLabel"] {
-        color: #FFFFFF !important;
-        font-size: 20px !important;
-    }
-    /* تنسيق حاوية التقرير الجذاب */
-    .report-card {
-        background-color: #ffffff;
-        border: 10px double #000000;
-        padding: 40px;
-        color: #000000;
-        font-family: 'Courier New', Courier, monospace;
-        margin-top: 20px;
-    }
+    .stMetric { background-color: #ffffff; border: 1px solid #e0e0e0; padding: 15px; border-radius: 10px; box-shadow: 2px 2px 5px rgba(0,0,0,0.05); }
+    .forecast-box { background-color: #e8f5e9; border: 1px dashed #2e7d32; padding: 15px; border-radius: 10px; text-align: center; font-weight: bold; margin-bottom: 20px; }
+    .anomaly-card { background-color: #fff3f3; border-left: 5px solid #ff4b4b; padding: 10px; border-radius: 5px; margin-bottom: 10px; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -42,111 +19,139 @@ def toggle_lang(): st.session_state.lang = 'English' if st.session_state.lang ==
 
 translations = {
     'Arabic': {
-        'title': "📊 لوحة تحكم سدرة الذكية",
-        'summary': "📋 مؤشرات الكفاءة والإنتاج",
-        'baselines': "📉 خطوط الأساس (العطلات والجمع)",
-        'gen_report': "📂 عرض التقرير الشهري الجذاب",
-        'footer': "قسم الصيانة - وحدة المرافق"
+        'title': "📊 نظام سدرة الذكي الشامل للمرافق والإنتاج",
+        'lang_btn': "Switch to English",
+        'all_period': "السنة كاملة",
+        'summary': "📋 مؤشرات الأداء والإنتاج (KPIs)",
+        'baselines': "📉 خطوط الأساس (Baselines)",
+        'forecast': "🔮 التنبؤ بالاستهلاك المتوقع بنهاية الشهر",
+        'anom': "🚨 كشف الشذوذ والتنبيهات",
+        'footer': "Done by Maintenance Department (Utilities)",
+        'off_baseline': "خط أساس (الجمع وأيام العطل)"
     },
     'English': {
-        'title': "📊 SIDRA SMART DASHBOARD",
-        'summary': "📋 Efficiency KPIs",
+        'title': "📊 SIDRA COMPREHENSIVE UTILITIES & PRODUCTION SYSTEM",
+        'lang_btn': "التحويل للعربية",
+        'all_period': "Full Year",
+        'summary': "📋 Production & Efficiency KPIs",
         'baselines': "📉 Baselines Analysis",
-        'gen_report': "📂 View Monthly Pro Report",
-        'footer': "Maintenance Dept - Utilities"
+        'forecast': "🔮 Monthly Forecast",
+        'anom': "🚨 Anomaly Detection",
+        'footer': "Done by Maintenance Department (Utilities)",
+        'off_baseline': "Friday & Day-Off Baseline"
     }
 }
 l = translations[st.session_state.lang]
 
 # --- 2. القائمة الجانبية ---
 with st.sidebar:
-    try: st.image("al sidra new.jpg", use_container_width=True)
-    except: st.title("SIDRA")
-    st.button("Switch Language / تغيير اللغة", on_click=toggle_lang)
-    uploaded_file = st.file_uploader("Upload Daily Excel", type=['xlsx'])
-    prod_qty = st.number_input("Monthly Production (KG)", min_value=1.0, value=150000.0)
+    try:
+        st.image("al sidra new.jpg", use_container_width=True)
+    except:
+        st.subheader("AL-SIDRA")
+    
+    st.button(l['lang_btn'], on_click=toggle_lang)
+    st.markdown("---")
+    uploaded_file = st.file_uploader("Upload DAILY REPORT 2025", type=['xlsx'])
+    
+    prod_qty = st.number_input("Total Monthly Production (KG)", min_value=1.0, value=150000.0)
+    st.markdown("---")
+    st.markdown(f"<div style='text-align:center; color:grey; font-size:12px;'>{l['footer']}</div>", unsafe_allow_html=True)
 
-# --- 3. المعالجة والعرض ---
+st.title(l['title'])
+
 if uploaded_file:
     try:
         xl = pd.ExcelFile(uploaded_file)
-        df_list = [xl.parse(s).assign(MONTH=s) for s in xl.sheet_names]
-        full_df = pd.concat(df_list, ignore_index=True)
-        full_df.columns = [str(c).strip().upper() for c in full_df.columns]
+        dfs = []
+        for sheet in xl.sheet_names:
+            temp_df = xl.parse(sheet)
+            temp_df.columns = [str(c).strip().upper() for c in temp_df.columns]
+            temp_df.rename(columns={'DAY': 'DATE'}, inplace=True)
+            temp_df = temp_df[pd.to_numeric(temp_df['DATE'], errors='coerce').notnull()]
+            temp_df['MONTH'] = sheet
+            dfs.append(temp_df)
+        full_df = pd.concat(dfs, ignore_index=True)
+
+        month_list = [l['all_period']] + list(full_df['MONTH'].unique())
+        selected_period = st.selectbox("Select Period", month_list)
+        df = full_df if selected_period == l['all_period'] else full_df[full_df['MONTH'] == selected_period]
+
+        def get_col(keys):
+            for col in df.columns:
+                if any(k in col for k in keys): return pd.to_numeric(df[col], errors='coerce').fillna(0)
+            return pd.Series([0.0]*len(df))
+
+        df['ELEC'] = get_col(['ELEC', 'كهرباء'])
+        df['LPG'] = get_col(['LPG', 'غاز'])
+        df['W_IN'] = get_col(['WATER REC', 'وارد'])
+        df['W_OUT'] = get_col(['SANIT', 'صرف', 'نضح'])
+
+        # --- 3. التنبؤ الذكي (Forecast) ---
+        st.subheader(l['forecast'])
+        days_in_data = len(df)
+        if days_in_data > 0:
+            p_elec = (df['ELEC'].sum() / days_in_data) * 30
+            p_lpg = (df['LPG'].sum() / days_in_data) * 30
+            p_water = (df['W_IN'].sum() / days_in_data) * 30
+            
+            f1, f2, f3 = st.columns(3)
+            f1.markdown(f"<div class='forecast-box'>⚡ {l['forecast']} (Elec):<br>{p_elec:,.0f} kWh</div>", unsafe_allow_html=True)
+            f2.markdown(f"<div class='forecast-box'>🔥 {l['forecast']} (LPG):<br>{p_lpg:,.0f} kg</div>", unsafe_allow_html=True)
+            f3.markdown(f"<div class='forecast-box'>💧 {l['forecast']} (Water):<br>{p_water:,.0f} m³</div>", unsafe_allow_html=True)
+
+        # --- 4. حساب KPIs ---
+        avg_daily_prod = prod_qty / 30 
         
-        selected_month = st.selectbox("Select Month", list(full_df['MONTH'].unique()))
-        df = full_df[full_df['MONTH'] == selected_month].copy()
-
-        # تنظيف البيانات
-        def clean(keys):
-            col = next((c for c in df.columns if any(k in c for k in keys)), None)
-            return pd.to_numeric(df[col], errors='coerce').fillna(0) if col else pd.Series([0.0]*len(df))
-
-        df['E'] = clean(['ELEC', 'كهرباء'])
-        df['L'] = clean(['LPG', 'غاز'])
-        df['W'] = clean(['WATER REC', 'وارد'])
-        df['S'] = clean(['SANIT', 'صرف'])
-
-        # الحسابات
-        avg_p = prod_qty / 30
-        elec_kpi = (df['E'].mean() / avg_p) if avg_p > 0 else 0
-        
-        # خط الأساس الذكي (الجمعة + العطلات)
-        df['DT'] = pd.to_datetime(df.get('DATE', df.index), errors='coerce')
-        off_mask = (df['E'] < df['E'].mean() * 0.45) # أي يوم استهلاكه أقل من 45% من المعدل
-        base_val = df[off_mask]['E'].mean() if off_mask.any() else df['E'].min()
-
-        st.title(l['title'])
-        
-        # عرض المؤشرات بالألوان المتباينة
         st.subheader(l['summary'])
-        c1, c2, c3 = st.columns(3)
-        c1.metric("Electricity/KG", f"{elec_kpi:.3f} kWh")
-        c2.metric("LPG Efficiency", f"{(df['L'].mean()/avg_p):.4f} kg")
-        c3.metric("Water Loss", f"{(df['W'].sum()-df['S'].sum()):,.0f} m³")
+        c1, c2, c3, c4 = st.columns(4)
+        with c1:
+            elec_per_kg = (df['ELEC'].mean() / avg_daily_prod) if avg_daily_prod > 0 else 0
+            st.metric("Electricity/KG", f"{elec_per_kg:.3f} kWh/kg")
+        with c2:
+            lpg_per_kg = (df['LPG'].mean() / avg_daily_prod) if avg_daily_prod > 0 else 0
+            st.metric("LPG/KG", f"{lpg_per_kg:.4f} kg/kg")
+        with c3:
+            water_per_kg = (df['W_IN'].mean() / avg_daily_prod) if avg_daily_prod > 0 else 0
+            st.metric("Water/KG", f"{(water_per_kg * 1000):.2f} L/kg")
+        with c4:
+            loss = df['W_IN'].sum() - df['W_OUT'].sum()
+            st.metric("Water Loss", f"{loss:,.0f} m³", f"{(loss/df['W_IN'].sum()*100 if df['W_IN'].sum()>0 else 0):.1f}%")
 
+        # --- 5. خطوط الأساس (المعدلة لدمج الجمعة والعطل) ---
         st.subheader(l['baselines'])
-        b1, b2 = st.columns(2)
-        b1.metric("Friday & Off Baseline", f"{base_val:,.1f} kWh")
-        b2.metric("Daily Avg Water", f"{df['W'].mean():,.1f} m³")
+        b1, b2, b3, b4 = st.columns(4)
+        df['DT'] = pd.to_datetime(df['DATE'], errors='coerce')
+        
+        # منطق ذكي: العطلة هي (يوم جمعة) أو (أي يوم استهلاكه أقل من 40% من المتوسط)
+        avg_elec = df['ELEC'].mean()
+        off_days_df = df[(df['DT'].dt.day_name() == 'Friday') | (df['ELEC'] < avg_elec * 0.4)]
+        
+        with b1: 
+            off_val = off_days_df['ELEC'].mean() if not off_days_df.empty else df['ELEC'].min()
+            st.metric(l['off_baseline'], f"{off_val:,.0f} kWh")
+            
+        with b2: 
+            summer_data = df[df['MONTH'].str.upper().isin(['JUNE', 'JULY', 'AUGUST', 'يونيو', 'يوليو', 'أغسطس'])]
+            st.metric("Summer Elec Baseline", f"{np.nan_to_num(summer_data['ELEC'].mean()):,.0f} kWh")
+        with b3: st.metric("Avg Daily LPG", f"{df['LPG'].mean():,.1f} kg")
+        with b4: st.metric("Avg Daily Water", f"{df['W_IN'].mean():,.1f} m³")
 
-        # رسم بياني متباين
-        fig = px.line(df, y=['E', 'L'], title="Consumption Trends")
-        fig.update_layout(template="plotly_dark", plot_bgcolor='black', paper_bgcolor='black')
-        st.plotly_chart(fig, use_container_width=True)
-
-        # --- 4. التقرير الجذاب (HTML) ---
+        # --- 6. الشذوذ والرسوم ---
         st.markdown("---")
-        if st.button(l['gen_report']):
-            st.markdown(f"""
-                <div class="report-card">
-                    <h1 style="text-align:center; color:red; text-decoration: underline;">MONTHLY UTILITIES REPORT - AL SIDRA</h1>
-                    <p style="font-size:18px;"><b>Selected Period:</b> {selected_month}</p>
-                    <p style="font-size:18px;"><b>Target Production:</b> {prod_qty:,.0f} KG</p>
-                    <hr style="border: 2px solid black;">
-                    <table style="width:100%; border-collapse: collapse; font-size:20px;">
-                        <tr style="background-color: black; color: white;">
-                            <th style="padding:15px; border:2px solid black;">Metric Description</th>
-                            <th style="padding:15px; border:2px solid black;">Analyzed Value</th>
-                        </tr>
-                        <tr>
-                            <td style="padding:15px; border:1px solid black;">Energy Intensity (kWh/kg)</td>
-                            <td style="padding:15px; border:1px solid black; color:red; font-weight:bold;">{elec_kpi:.3f}</td>
-                        </tr>
-                        <tr>
-                            <td style="padding:15px; border:1px solid black;">Friday & Holiday Baseline</td>
-                            <td style="padding:15px; border:1px solid black; color:green; font-weight:bold;">{base_val:,.1f} kWh</td>
-                        </tr>
-                        <tr>
-                            <td style="padding:15px; border:1px solid black;">Total Monthly LPG</td>
-                            <td style="padding:15px; border:1px solid black;">{df['L'].sum():,.0f} kg</td>
-                        </tr>
-                    </table>
-                    <br>
-                    <h3 style="text-align:right;">Maintenance Department Signature: _________________</h3>
-                    <p style="text-align:center; color:blue;">(Press Ctrl+P to save this as a high-quality PDF)</p>
-                </div>
-            """, unsafe_allow_html=True)
+        st.subheader(l['anom'])
+        anom_found = False
+        for col, label in [('ELEC', 'Elec'), ('W_IN', 'Water')]:
+            m, s = df[col].mean(), df[col].std()
+            out = df[df[col] > (m + 2*s)]
+            for _, r in out.iterrows():
+                st.warning(f"Peak {label} on {r['DATE']}: {r[col]:,.0f}")
+                anom_found = True
+        if not anom_found: st.success("Stable Operations ✅")
 
-    except Exception as e: st.error(f"Error: {e}")
-else: st.info("Welcome! Please upload the Daily Report to generate insights.")
+        st.plotly_chart(px.line(df, x='DATE', y=['ELEC', 'LPG', 'W_IN'], title="Daily Trends Analysis"), use_container_width=True)
+
+    except Exception as e:
+        st.error(f"Error: {e}")
+else:
+    st.info("System Ready. Please upload Excel.")
