@@ -2,9 +2,12 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 import numpy as np
-from reportlab.lib.pagesizes import A4
-from reportlab.pdfgen import canvas
+from reportlab.lib.pagesizes import A4, landscape
+from reportlab.lib import colors
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, Image
+from reportlab.lib.styles import getSampleStyleSheet
 import io
+import matplotlib.pyplot as plt
 
 # --- 1. الإعدادات والجماليات ---
 st.set_page_config(page_title="Sidra Utilities Intelligence", layout="wide")
@@ -45,39 +48,72 @@ translations = {
 }
 l = translations[st.session_state.lang]
 
-# --- دالة توليد PDF ---
-def generate_monthly_pdf(month, df, prod_qty):
+# --- دالة PDF احترافي ---
+def generate_monthly_pdf(month, df, prod_qty, logo_path="al sidra new.jpg"):
     buffer = io.BytesIO()
-    c = canvas.Canvas(buffer, pagesize=A4)
-    width, height = A4
+    doc = SimpleDocTemplate(buffer, pagesize=A4)
+    elements = []
+    styles = getSampleStyleSheet()
+    styleN = styles['Normal']
+    styleH = styles['Heading1']
 
-    c.setFont("Helvetica-Bold", 16)
-    c.drawString(50, height - 50, "SIDRA UTILITIES MONTHLY REPORT")
-    c.setFont("Helvetica", 12)
-    c.drawString(50, height - 80, f"Month: {month}")
-
-    y = height - 130
-    c.setFont("Helvetica", 10)
+    # شعار الشركة
+    try:
+        im = Image(logo_path, width=120, height=50)
+        elements.append(im)
+    except:
+        pass
+    elements.append(Spacer(1, 12))
+    elements.append(Paragraph(f"<b>SIDRA UTILITIES MONTHLY REPORT</b>", styleH))
+    elements.append(Paragraph(f"Month: {month}", styleN))
+    elements.append(Spacer(1, 12))
 
     avg_daily_prod = prod_qty / 30 if prod_qty > 0 else 0
 
-    lines = [
-        f"Total Electricity: {df['ELEC'].sum():,.0f} kWh",
-        f"Total LPG: {df['LPG'].sum():,.0f} kg",
-        f"Total Water In: {df['W_IN'].sum():,.1f} m3",
-        f"Water Loss: {(df['W_IN'].sum() - df['W_OUT'].sum()):,.1f} m3",
-        "-" * 45,
-        f"Electricity per KG: {(df['ELEC'].mean()/avg_daily_prod if avg_daily_prod else 0):.4f}",
-        f"LPG per KG: {(df['LPG'].mean()/avg_daily_prod if avg_daily_prod else 0):.5f}",
-        f"Water per KG (L): {(df['W_IN'].mean()/avg_daily_prod*1000 if avg_daily_prod else 0):.2f}",
+    # KPIs Table
+    data = [
+        ["Metric", "Value", "Unit"],
+        ["Total Electricity", f"{df['ELEC'].sum():,.0f}", "kWh"],
+        ["Total LPG", f"{df['LPG'].sum():,.0f}", "kg"],
+        ["Total Water In", f"{df['W_IN'].sum():,.1f}", "m³"],
+        ["Water Loss", f"{(df['W_IN'].sum() - df['W_OUT'].sum()):,.1f}", "m³"],
+        ["Electricity/KG", f"{(df['ELEC'].mean()/avg_daily_prod if avg_daily_prod else 0):.4f}", "kWh/kg"],
+        ["LPG/KG", f"{(df['LPG'].mean()/avg_daily_prod if avg_daily_prod else 0):.5f}", "kg/kg"],
+        ["Water/KG (L)", f"{(df['W_IN'].mean()/avg_daily_prod*1000 if avg_daily_prod else 0):.2f}", "L/kg"],
     ]
 
-    for line in lines:
-        c.drawString(50, y, line)
-        y -= 18
+    table = Table(data, hAlign='LEFT')
+    table.setStyle(TableStyle([
+        ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#2E7D32")),
+        ('TEXTCOLOR',(0,0),(-1,0),colors.white),
+        ('GRID', (0,0), (-1,-1), 0.5, colors.grey),
+        ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
+        ('FONTNAME', (0,1), (-1,-1), 'Helvetica'),
+        ('FONTSIZE', (0,0), (-1,-1), 10),
+    ]))
+    elements.append(table)
+    elements.append(Spacer(1, 20))
 
-    c.showPage()
-    c.save()
+    # Charts
+    fig, ax = plt.subplots(figsize=(6,3))
+    ax.plot(df['DATE'], df['ELEC'], label="Electricity", color='blue')
+    ax.plot(df['DATE'], df['LPG'], label="LPG", color='red')
+    ax.plot(df['DATE'], df['W_IN'], label="Water", color='green')
+    ax.set_title("Daily Consumption")
+    ax.set_xlabel("Date")
+    ax.set_ylabel("Value")
+    ax.legend()
+    plt.xticks(rotation=45)
+    plt.tight_layout()
+    chart_path = "temp_chart.png"
+    plt.savefig(chart_path)
+    plt.close()
+    try:
+        elements.append(Image(chart_path, width=450, height=200))
+    except:
+        pass
+
+    doc.build(elements)
     buffer.seek(0)
     return buffer
 
@@ -129,9 +165,9 @@ if uploaded_file:
         if selected_period != l['all_period']:
             pdf = generate_monthly_pdf(selected_period, df, prod_qty)
             st.download_button(
-                label="📄 Download Monthly PDF Report",
+                label="📄 Download Professional PDF Report",
                 data=pdf,
-                file_name=f"{selected_period}_Utilities_Report.pdf",
+                file_name=f"{selected_period}_Utilities_Professional_Report.pdf",
                 mime="application/pdf"
             )
 
