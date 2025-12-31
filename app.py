@@ -31,7 +31,6 @@ translations = {
         'summary': "📋 مؤشرات الأداء والإنتاج (KPIs)",
         'forecast': "🔮 التنبؤ بالاستهلاك المتوقع بنهاية الشهر",
         'anom': "🚨 كشف الشذوذ والتنبيهات",
-        'baselines': "📉 خطوط الأساس (Baselines)",
         'footer': "Done by Maintenance Department (Utilities)"
     },
     'English': {
@@ -41,7 +40,6 @@ translations = {
         'summary': "📋 Production & Efficiency KPIs",
         'forecast': "🔮 Monthly Forecast",
         'anom': "🚨 Anomaly Detection",
-        'baselines': "📉 Baselines Analysis",
         'footer': "Done by Maintenance Department (Utilities)"
     }
 }
